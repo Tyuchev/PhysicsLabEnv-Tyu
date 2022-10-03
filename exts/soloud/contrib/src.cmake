@@ -44,50 +44,11 @@ set (TARGET_HEADERS
 
 # Core
 set (CORE_PATH ${SOURCE_PATH}/core)
-set (CORE_SOURCES
-	${CORE_PATH}/soloud.cpp
-	${CORE_PATH}/soloud_audiosource.cpp
-	${CORE_PATH}/soloud_bus.cpp
-	${CORE_PATH}/soloud_core_3d.cpp
-	${CORE_PATH}/soloud_core_basicops.cpp
-	${CORE_PATH}/soloud_core_faderops.cpp
-	${CORE_PATH}/soloud_core_filterops.cpp
-	${CORE_PATH}/soloud_core_getters.cpp
-	${CORE_PATH}/soloud_core_setters.cpp
-	${CORE_PATH}/soloud_core_voicegroup.cpp
-	${CORE_PATH}/soloud_core_voiceops.cpp
-	${CORE_PATH}/soloud_fader.cpp
-	${CORE_PATH}/soloud_fft.cpp
-	${CORE_PATH}/soloud_fft_lut.cpp
-	${CORE_PATH}/soloud_file.cpp
-	${CORE_PATH}/soloud_filter.cpp
-	${CORE_PATH}/soloud_queue.cpp
-	${CORE_PATH}/soloud_thread.cpp
-)
-
+file(GLOB_RECURSE CORE_SOURCES ${CORE_PATH}/*.c*)
 
 # Audiosources
 set (AUDIOSOURCES_PATH ${SOURCE_PATH}/audiosource)
-set (AUDIOSOURCES_SOURCES
-	${AUDIOSOURCES_PATH}/monotone/soloud_monotone.cpp
-	${AUDIOSOURCES_PATH}/openmpt/soloud_openmpt.cpp
-	${AUDIOSOURCES_PATH}/openmpt/soloud_openmpt_dll.c
-	${AUDIOSOURCES_PATH}/sfxr/soloud_sfxr.cpp
-	${AUDIOSOURCES_PATH}/speech/darray.cpp
-	${AUDIOSOURCES_PATH}/speech/klatt.cpp
-	${AUDIOSOURCES_PATH}/speech/resonator.cpp
-	${AUDIOSOURCES_PATH}/speech/soloud_speech.cpp
-	${AUDIOSOURCES_PATH}/speech/tts.cpp
-	${AUDIOSOURCES_PATH}/tedsid/sid.cpp
-	${AUDIOSOURCES_PATH}/tedsid/soloud_tedsid.cpp
-	${AUDIOSOURCES_PATH}/tedsid/ted.cpp
-	${AUDIOSOURCES_PATH}/vic/soloud_vic.cpp
-	${AUDIOSOURCES_PATH}/vizsn/soloud_vizsn.cpp
-	${AUDIOSOURCES_PATH}/wav/dr_impl.cpp
-	${AUDIOSOURCES_PATH}/wav/soloud_wav.cpp
-	${AUDIOSOURCES_PATH}/wav/soloud_wavstream.cpp
-	${AUDIOSOURCES_PATH}/wav/stb_vorbis.c
-)
+file(GLOB_RECURSE AUDIOSOURCES_SOURCES ${AUDIOSOURCES_PATH}/*.c*)
 
 
 # Backends
@@ -179,6 +140,21 @@ if (SOLOUD_BACKEND_WASAPI)
 	set (BACKENDS_SOURCES
 		${BACKENDS_SOURCES}
 		${BACKENDS_PATH}/wasapi/soloud_wasapi.cpp
+	)
+endif()
+
+
+if (SOLOUD_BACKEND_ALSA)
+	add_definitions (-DWITH_ALSA)
+
+	set (BACKENDS_SOURCES
+		${BACKENDS_SOURCES}
+		${BACKENDS_PATH}/alsa/soloud_alsa.cpp
+	)
+	find_package(ALSA REQUIRED)
+	set (LINK_LIBRARIES
+		${LINK_LIBRARIES}
+		${ALSA_LIBRARIES}
 	)
 endif()
 

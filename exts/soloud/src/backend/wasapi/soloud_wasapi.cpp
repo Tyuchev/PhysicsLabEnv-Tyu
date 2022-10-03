@@ -269,13 +269,13 @@ namespace SoLoud
         }
         SAFE_RELEASE(data->renderClient);
         SAFE_RELEASE(data->audioClient);
-        SAFE_RELEASE(data->device);
+        SAFE_RELEASE(data->device);>
         SAFE_RELEASE(data->deviceEnumerator);
         delete data;
         aSoloud->mBackendData = 0;
         CoUninitialize();
     }
-
+>
 	result wasapi_init(Soloud *aSoloud, unsigned int aFlags, unsigned int /*aSamplerate*/, unsigned int aBuffer, unsigned int /*aChannels*/)
     {
 		CoInitializeEx(0, COINIT_MULTITHREADED);

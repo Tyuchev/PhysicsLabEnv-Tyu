@@ -5,6 +5,7 @@
 #include "config.h"
 #include "cvar.h"
 #include <unordered_map>
+#include <cstring>
 #include <string>
 
 namespace Core

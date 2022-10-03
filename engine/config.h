@@ -6,6 +6,7 @@
 	
 	(C) 2015-2022 See the LICENSE file.
 */
+#define NOMINMAX 
 #ifdef __WIN32__
 #include "win32/pch.h"
 #endif

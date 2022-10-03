@@ -1,0 +1,7 @@
+// Brainstorm messages to be sent from/to server/client
+
+
+shot fired
+hit registered
+
+movement registered

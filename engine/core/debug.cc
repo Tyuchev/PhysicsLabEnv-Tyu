@@ -51,7 +51,7 @@ n_error(const char* msg, ...)
 {
     va_list argList;
     va_start(argList, msg);
-    printf(msg, argList);
+    vprintf(msg, argList);
     va_end(argList);
     assert(0);
 }
@@ -67,7 +67,7 @@ n_warning(const char* msg, ...)
     va_list argList;
     va_start(argList, msg);
     printf("[WARNING] ");
-    printf(msg, argList);
+    vprintf(msg, argList);
     va_end(argList);
 }        
 
@@ -79,6 +79,6 @@ n_printf(const char *msg, ...)
 {
     va_list argList;
     va_start(argList, msg);
-    printf(msg, argList);
+    vprintf(msg, argList);
     va_end(argList);
 }

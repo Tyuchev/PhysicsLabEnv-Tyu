@@ -10,7 +10,7 @@ SET(files_project ${project_headers} ${project_sources})
 SOURCE_GROUP("spacegame" FILES ${files_project})
 
 ADD_EXECUTABLE(spacegame ${files_project})
-TARGET_LINK_LIBRARIES(spacegame core render)
+TARGET_LINK_LIBRARIES(spacegame core render engine)
 ADD_DEPENDENCIES(spacegame core render)
 
 IF(MSVC)
