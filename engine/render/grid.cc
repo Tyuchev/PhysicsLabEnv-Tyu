@@ -5,6 +5,7 @@
 #include "config.h"
 #include "grid.h"
 #include <array>
+#include <cstring>
 
 namespace Render
 {

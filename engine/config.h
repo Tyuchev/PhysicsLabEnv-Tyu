@@ -1,3 +1,5 @@
+#pragma once
+
 //------------------------------------------------------------------------------
 /**
     @file core/config.h
@@ -9,6 +11,7 @@
 #ifdef __WIN32__
 #include "win32/pch.h"
 #endif
+#define NOMINMAX
 
 #include <stdint.h>
 #include <atomic>

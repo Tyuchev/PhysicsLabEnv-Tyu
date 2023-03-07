@@ -320,7 +320,7 @@ Window::Open()
 #if _WIN32
 	ImFont* font = io.Fonts->AddFontFromFileTTF("c:/windows/fonts/tahoma.ttf", 14, &config);
 #else
-	ImFont* font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 18, &config);
+	ImFont* font = io.Fonts->AddFontFromFileTTF("fonts/FreeSans.ttf", 18, &config);
 #endif
 
 	unsigned char* buffer;

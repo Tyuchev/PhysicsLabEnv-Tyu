@@ -31,14 +31,16 @@ struct ColliderId
         ret.generation = generation;
         return ret;
     }
-    explicit constexpr operator uint32_t() const
+    explicit operator uint32_t() const
     {
         return ((generation << 22) & 0xFFC0000) + (index & 0x003FFFFF);
     }
-    static constexpr ColliderId Invalid()
+    
+    static ColliderId Invalid()
     {
-        return { 0xFFFFFFFF, 0xFFFFFFFF };
+        return Create(0xFFFFFFFFu, 0xFFFFFFFFu);
     }
+
     constexpr uint32_t HashCode() const
     {
         return index;
@@ -61,13 +63,13 @@ struct ColliderMeshId
         ret.generation = (id & 0xFFC0000) >> 22;
         return ret;
     }
-    explicit constexpr operator uint32_t() const
+    explicit operator uint32_t() const
     {
         return ((generation << 22) & 0xFFC0000) + (index & 0x003FFFFF);
     }
-    static constexpr ColliderMeshId Invalid()
+    static ColliderMeshId Invalid()
     {
-        return { 0xFFFFFFFF, 0xFFFFFFFF };
+        return Create( 0xFFFFFFFF );
     }
     constexpr uint32_t HashCode() const
     {
@@ -94,5 +96,8 @@ ColliderId CreateCollider(ColliderMeshId meshId, glm::mat4 const& transform, uin
 ColliderMeshId LoadColliderMesh(std::string path);
 
 void SetTransform(ColliderId collider, glm::mat4 const& transform);
+
+float
+RaycastMesh(glm::vec3 start, glm::vec3 dir, float maxDistance, ColliderMeshId meshId, glm::mat4 const& meshInverseTransform);
 
 } // namespace Physics

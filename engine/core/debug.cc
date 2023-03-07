@@ -19,7 +19,7 @@ n_barf(const char* exp, const char* file, int line)
     msg += "expression: ";
     msg += exp;
     msg += "\n";
-    n_error(msg.c_str());
+    n_error("%s", msg.c_str());
 }
 
 //------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ n_barf2(const char* exp, const char* msg, const char* file, int line)
     str += "programmer says: ";
     str += msg;
     str += "\n";
-    n_error(str.c_str());
+    n_error("%s", str.c_str());
 }
 
 //------------------------------------------------------------------------------
@@ -51,7 +51,7 @@ n_error(const char* msg, ...)
 {
     va_list argList;
     va_start(argList, msg);
-    printf(msg, argList);
+    vprintf(msg, argList);
     va_end(argList);
     assert(0);
 }
@@ -67,7 +67,7 @@ n_warning(const char* msg, ...)
     va_list argList;
     va_start(argList, msg);
     printf("[WARNING] ");
-    printf(msg, argList);
+    vprintf(msg, argList);
     va_end(argList);
 }        
 
@@ -79,6 +79,6 @@ n_printf(const char *msg, ...)
 {
     va_list argList;
     va_start(argList, msg);
-    printf(msg, argList);
+    vprintf(msg, argList);
     va_end(argList);
 }

@@ -12,11 +12,16 @@
     (C) 2002 RadonLabs GmbH
     (C) 2013-2020 Individual contributors, see AUTHORS file
 */
-#include "config.h"
 
-void n_printf(const char *, ...) __attribute__((format(printf,1,2)));
-void n_error(const char*, ...) __attribute__((format(printf,1,2)));
-void n_warning(const char*, ...) __attribute__((format(printf,1,2)));
+#ifdef __GNUC__
+#define N_PRINT_ATTRIBUTES __attribute__((format(printf,1,2)))
+#else
+#define N_PRINT_ATTRIBUTES
+#endif
+
+void n_printf(const char *, ...) N_PRINT_ATTRIBUTES;
+void n_error(const char*, ...) N_PRINT_ATTRIBUTES;
+void n_warning(const char*, ...) N_PRINT_ATTRIBUTES;
 void n_barf(const char *, const char *, int);
 void n_barf2(const char*, const char*, const char*, int);
 

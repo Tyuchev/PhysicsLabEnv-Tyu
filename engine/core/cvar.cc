@@ -6,6 +6,7 @@
 #include "cvar.h"
 #include <unordered_map>
 #include <string>
+#include <cstring>
 
 namespace Core
 {
@@ -106,7 +107,7 @@ CVarParseWrite(CVar* cVar, const char* value)
         CVarWriteInt(cVar, atoi(value));
         break;
     case CVar_Float:
-        CVarWriteFloat(cVar, atof(value));
+        CVarWriteFloat(cVar, (float)atof(value));
         break;
     case CVar_String:
         CVarWriteString(cVar, value);
@@ -160,8 +161,11 @@ CVarWriteString(CVar* cVar, const char* value)
     {
         if (cVar->value.cstr)
             free(cVar->value.cstr);
-            
+#ifdef _MSC_VER
+        cVar->value.cstr = _strdup(value);
+#else            
         cVar->value.cstr = strdup(value);
+#endif        
         cVar->modified = true;
         return;
     }
