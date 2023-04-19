@@ -29,6 +29,8 @@ SET(files_render_render
 	physics.h
 	physics.cc
 	resourceid.h
+	particlesystem.cc
+	particlesystem.h
 	
 	# external single header libs
 	stb_image.h

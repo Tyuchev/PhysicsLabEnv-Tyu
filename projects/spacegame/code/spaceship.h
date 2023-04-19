@@ -1,10 +1,18 @@
+#pragma once
 #include "render/model.h"
+
+namespace Render
+{
+    struct ParticleEmitter;
+}
 
 namespace Game
 {
 
 struct SpaceShip
 {
+    SpaceShip();
+    
     glm::vec3 position = glm::vec3(0);
     glm::quat orientation = glm::identity<glm::quat>();
     glm::vec3 camPos = glm::vec3(0, 1.0f, -2.0f);
@@ -25,6 +33,9 @@ struct SpaceShip
     float rotZSmooth = 0;
 
     Render::ModelId model;
+    Render::ParticleEmitter* particleEmitterLeft;
+    Render::ParticleEmitter* particleEmitterRight;
+    float emitterOffset = -0.5f;
 
     void Update(float dt);
 

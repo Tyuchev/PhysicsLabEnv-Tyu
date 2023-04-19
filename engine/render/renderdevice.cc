@@ -14,84 +14,10 @@
 #include "core/random.h"
 #include "core/cvar.h"
 #include "core/random.h"
+#include "particlesystem.h"
 
 namespace Render
 {
-
-struct ParticleSystem
-{
-    struct ParticleEmitter
-    {
-        ParticleEmitter(uint32_t numParticles)
-        {
-            data.numParticles = numParticles;
-            glGenBuffers(2, this->bufPositions);
-            glGenBuffers(2, this->bufVelocities);
-
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufPositions[0]);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufPositions[1]);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufVelocities[0]);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufVelocities[1]);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufColors[0]);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufColors[1]);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
-        }
-
-        ~ParticleEmitter()
-        {
-            glDeleteBuffers(2, this->bufPositions);
-            glDeleteBuffers(2, this->bufVelocities);
-            glDeleteBuffers(2, this->bufColors);
-        }
-           
-        struct EmitterBlock
-        {
-            glm::vec4 origin = glm::vec4(0,0,0,1); // where does particles spawn from?
-            glm::vec4 dir = glm::vec4(1); // general direction of particle emitter cone
-            glm::vec4 startColor = glm::vec4(1);
-            glm::vec4 endColor = glm::vec4(1);
-            uint32_t numParticles = 1024; // don't change in runtime!
-            float theta = glm::radians(45.0f); // radians of emitter cone
-            float startSpeed = 5.0f; // initial speed for each particle
-            float endSpeed = 0.1f; // what's the speed when the particle dies?
-            float startScale = 0.25f; // initial scale of each particle
-            float endScale = 0.0f; // final scale of each particle
-            float decayTime = 5.0f; // how long does each particle live?
-            float randomTimeOffsetDist = 0.0f; // new particles will start with lifetime between 0 and this value.
-            uint32_t looping = 0; // should the particle respawn after it dies?
-            uint32_t fireOnce = 1; // set to true if you want to fire this particle system once. This will reset all particles to their initial states.
-            uint32_t _padding[2]; // just padding.
-        } data;
-
-        GLuint bufPositions[2]; // position.xyz and scale
-        GLuint bufVelocities[2]; // velocity.xyz and lifetime
-        GLuint bufColors[2]; // rgba - TODO: alpha should use stippling
-    };
-    
-    GLuint writeIndex = 0;
-
-    std::vector<ParticleEmitter*> emitters;
-
-    Render::ShaderProgramId particleShaderId;
-    Render::ShaderProgramId particleSimComputeShaderId;
-    GLuint emitterBlockUBO;
-};
-static ParticleSystem particles;
-
-void SetupParticleSystem()
-{
-    auto vs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::VERTEXSHADER, "shd/vs_particles_bufstorage.glsl");
-    auto fs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::FRAGMENTSHADER, "shd/fs_particles_bufstorage.glsl");
-    particles.particleShaderId = Render::ShaderResource::CompileShaderProgram({ vs, fs });
-    auto cs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::COMPUTESHADER, "shd/cs_particle_sim_bufstorage.glsl");
-    particles.particleSimComputeShaderId = Render::ShaderResource::CompileShaderProgram({ cs });
-    glGenBuffers(1, &particles.emitterBlockUBO);
-}
 
 Render::ShaderProgramId directionalLightProgram;
 Render::ShaderProgramId pointlightProgram;
@@ -140,7 +66,7 @@ void RenderDevice::Init()
     CameraManager::Create();
     LightServer::Initialize();
     TextureResource::Create();
-
+    
     SetupFullscreenQuad();
     
     // Shaders
@@ -217,9 +143,9 @@ void RenderDevice::Init()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    ParticleSystem::Instance()->Initialize();
+
     Debug::InitDebugRendering();
-    
-    SetupParticleSystem();
 }
 
 void RenderDevice::Draw(ModelId model, glm::mat4 localToWorld)
@@ -493,26 +419,27 @@ RenderDevice::SkyboxPass()
 void
 RenderDevice::ParticlePass(float dt)
 {
-    GLuint simProgramHandle = ShaderResource::GetProgramHandle(particles.particleSimComputeShaderId);
+    ParticleSystem* particles = ParticleSystem::Instance();
+    GLuint simProgramHandle = ShaderResource::GetProgramHandle(particles->particleSimComputeShaderId);
     glUseProgram(simProgramHandle);
     glUniform1f(glGetUniformLocation(simProgramHandle, "TimeStep"), dt);
     
-    uint32_t readIndex = (particles.writeIndex + 1) % 2;
+    uint32_t readIndex = (particles->writeIndex + 1) % 2;
 
-    for (auto emitter : particles.emitters)
+    for (auto emitter : particles->emitters)
     {
         // Integrate particle dynamics
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, emitter->bufPositions[readIndex]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, emitter->bufColors[readIndex]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, emitter->bufVelocities[readIndex]);
         
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, emitter->bufPositions[particles.writeIndex]);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, emitter->bufColors[particles.writeIndex]);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, emitter->bufVelocities[particles.writeIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, emitter->bufPositions[particles->writeIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, emitter->bufColors[particles->writeIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, emitter->bufVelocities[particles->writeIndex]);
 
-        glBindBuffer(GL_UNIFORM_BUFFER, particles.emitterBlockUBO);
-        glBindBufferBase(GL_UNIFORM_BUFFER, 10, particles.emitterBlockUBO);
-        glBufferData(GL_UNIFORM_BUFFER, sizeof(ParticleSystem::ParticleEmitter::EmitterBlock), &emitter->data, GL_STATIC_DRAW);
+        glBindBuffer(GL_UNIFORM_BUFFER, particles->emitterBlockUBO);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 10, particles->emitterBlockUBO);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(ParticleEmitter::EmitterBlock), &emitter->data, GL_STATIC_DRAW);
 
         glUniform3ui(glGetUniformLocation(simProgramHandle, "Random"), Core::FastRandom(), Core::FastRandom(), Core::FastRandom());
 
@@ -522,10 +449,12 @@ RenderDevice::ParticlePass(float dt)
             1
         };
         glDispatchCompute(numWorkGroups[0], numWorkGroups[1], numWorkGroups[2]);
+
+        emitter->data.fireOnce = false;
     }
 
     Camera const* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
-    GLuint programHandle = ShaderResource::GetProgramHandle(particles.particleShaderId);
+    GLuint programHandle = ShaderResource::GetProgramHandle(particles->particleShaderId);
     glUseProgram(programHandle);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -541,7 +470,7 @@ RenderDevice::ParticlePass(float dt)
     glUniformMatrix4fv(glGetUniformLocation(programHandle, "BillBoardViewProjection"), 1, false, &billboardViewProjection[0][0]);
     GLuint particleOffsetLoc = glGetUniformLocation(programHandle, "ParticleOffset");
 
-    for (auto emitter : particles.emitters)
+    for (auto emitter : particles->emitters)
     { // DRAW
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, emitter->bufPositions[readIndex]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, emitter->bufColors[readIndex]);
@@ -564,7 +493,7 @@ RenderDevice::ParticlePass(float dt)
     glUseProgram(0);
 
     // swap doublebuffer particles index
-    particles.writeIndex = readIndex;
+    particles->writeIndex = readIndex;
 }
 
 void

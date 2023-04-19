@@ -15,6 +15,7 @@
 namespace Render
 {
 
+
 class Grid;
 
 typedef ResourceId MeshResourceId;
