@@ -10,11 +10,11 @@
 #include <string>
 #include <vector>
 #include "renderdevice.h"
+#include "resourceid.h"
+#include "textureresource.h"
 
 namespace Render
 {
-
-typedef uint32_t ModelId;
 
 struct Model
 {

@@ -17,19 +17,18 @@ SET(files_render_render
 	shaderresource.cc
 	textureresource.h
 	textureresource.cc
-	framebuffer.h
-	framebuffer.cc
 	lightserver.h
 	lightserver.cc
 	cameramanager.h
 	cameramanager.cc
-	debugrender.cc
 	debugrender.h
+	debugrender.cc
 	grid.h
 	grid.cc
 	lightsources.h
-	physics.cc
 	physics.h
+	physics.cc
+	resourceid.h
 	
 	# external single header libs
 	stb_image.h

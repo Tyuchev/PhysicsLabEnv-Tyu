@@ -11,23 +11,97 @@
 #include "cameramanager.h"
 #include "debugrender.h"
 #include "render/grid.h"
+#include "core/random.h"
+#include "core/cvar.h"
+#include "core/random.h"
 
 namespace Render
 {
 
-#define CAMERA_SHADOW uint('GSHW')
+struct ParticleSystem
+{
+    struct ParticleEmitter
+    {
+        ParticleEmitter(uint32_t numParticles)
+        {
+            data.numParticles = numParticles;
+            glGenBuffers(2, this->bufPositions);
+            glGenBuffers(2, this->bufVelocities);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufPositions[0]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufPositions[1]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufVelocities[0]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufVelocities[1]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufColors[0]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, this->bufColors[1]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, this->data.numParticles * sizeof(glm::vec4), NULL, GL_DYNAMIC_DRAW);
+        }
+
+        ~ParticleEmitter()
+        {
+            glDeleteBuffers(2, this->bufPositions);
+            glDeleteBuffers(2, this->bufVelocities);
+            glDeleteBuffers(2, this->bufColors);
+        }
+           
+        struct EmitterBlock
+        {
+            glm::vec4 origin = glm::vec4(0,0,0,1); // where does particles spawn from?
+            glm::vec4 dir = glm::vec4(1); // general direction of particle emitter cone
+            glm::vec4 startColor = glm::vec4(1);
+            glm::vec4 endColor = glm::vec4(1);
+            uint32_t numParticles = 1024; // don't change in runtime!
+            float theta = glm::radians(45.0f); // radians of emitter cone
+            float startSpeed = 5.0f; // initial speed for each particle
+            float endSpeed = 0.1f; // what's the speed when the particle dies?
+            float startScale = 0.25f; // initial scale of each particle
+            float endScale = 0.0f; // final scale of each particle
+            float decayTime = 5.0f; // how long does each particle live?
+            float randomTimeOffsetDist = 0.0f; // new particles will start with lifetime between 0 and this value.
+            uint32_t looping = 0; // should the particle respawn after it dies?
+            uint32_t fireOnce = 1; // set to true if you want to fire this particle system once. This will reset all particles to their initial states.
+            uint32_t _padding[2]; // just padding.
+        } data;
+
+        GLuint bufPositions[2]; // position.xyz and scale
+        GLuint bufVelocities[2]; // velocity.xyz and lifetime
+        GLuint bufColors[2]; // rgba - TODO: alpha should use stippling
+    };
+    
+    GLuint writeIndex = 0;
+
+    std::vector<ParticleEmitter*> emitters;
+
+    Render::ShaderProgramId particleShaderId;
+    Render::ShaderProgramId particleSimComputeShaderId;
+    GLuint emitterBlockUBO;
+};
+static ParticleSystem particles;
+
+void SetupParticleSystem()
+{
+    auto vs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::VERTEXSHADER, "shd/vs_particles_bufstorage.glsl");
+    auto fs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::FRAGMENTSHADER, "shd/fs_particles_bufstorage.glsl");
+    particles.particleShaderId = Render::ShaderResource::CompileShaderProgram({ vs, fs });
+    auto cs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::COMPUTESHADER, "shd/cs_particle_sim_bufstorage.glsl");
+    particles.particleSimComputeShaderId = Render::ShaderResource::CompileShaderProgram({ cs });
+    glGenBuffers(1, &particles.emitterBlockUBO);
+}
+
 Render::ShaderProgramId directionalLightProgram;
 Render::ShaderProgramId pointlightProgram;
 Render::ShaderProgramId staticGeometryProgram;
 Render::ShaderProgramId staticShadowProgram;
 Render::ShaderProgramId skyboxProgram;
+Render::ShaderProgramId lightCullingProgram;
 
 GLuint fullscreenQuadVB;
 GLuint fullscreenQuadVAO;
-
-GLuint globalShadowMap;
-GLuint globalShadowFrameBuffer;
-const unsigned int shadowMapSize = 4096;
 
 //------------------------------------------------------------------------------
 /**
@@ -42,12 +116,9 @@ RenderDevice::RenderDevice() :
 void SetupFullscreenQuad()
 {
     const float verts[] = {
-        -1.0f,  1.0f, 1.0f,
-        -1.0f, -1.0f, 1.0f,
-         1.0f, -1.0f, 1.0f,
-         1.0f, -1.0f, 1.0f,
-         1.0f,  1.0f, 1.0f,
-        -1.0f,  1.0f, 1.0f
+        3.0f, 1.0f, 1.0f,
+        -1.0f, 1.0f, 1.0f,
+        -1.0f, -3.0f, 1.0f
     };
     
     glGenBuffers(1, &fullscreenQuadVB);
@@ -66,9 +137,9 @@ void SetupFullscreenQuad()
 void RenderDevice::Init()
 {
     RenderDevice::Instance();
+    CameraManager::Create();
     LightServer::Initialize();
     TextureResource::Create();
-    CameraManager::Create();
 
     SetupFullscreenQuad();
     
@@ -98,100 +169,57 @@ void RenderDevice::Init()
         auto fs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::FRAGMENTSHADER, "shd/fs_pointlight.glsl");
         pointlightProgram = Render::ShaderResource::CompileShaderProgram({ vs, fs });
     }
-
+    {
+        auto cs = Render::ShaderResource::LoadShader(Render::ShaderResource::ShaderType::COMPUTESHADER, "shd/cs_lightculling.glsl");
+        lightCullingProgram = Render::ShaderResource::CompileShaderProgram({ cs });
+    }
     GLint dims[4] = { 0 };
     glGetIntegerv(GL_VIEWPORT, dims);
     // default viewport extents
     GLint fbWidth = dims[2];
     GLint fbHeight = dims[3];
     
-    // Setup geometry buffer
-    glGenFramebuffers(1, &Instance()->geometryBuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, Instance()->geometryBuffer);
+    // Setup drawing buffers
+    glGenFramebuffers(1, &Instance()->forwardFrameBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, Instance()->forwardFrameBuffer );
 
-    glGenTextures(4, Instance()->renderTargets.RT);
+    glGenTextures(2, Instance()->renderTargets.RT);
 
-    glBindTexture(GL_TEXTURE_2D, Instance()->renderTargets.albedo);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbWidth, fbHeight, 0, GL_RGB, GL_FLOAT, 0);
+    glBindTexture(GL_TEXTURE_2D, Instance()->renderTargets.light);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, fbWidth, fbHeight, 0, GL_RGBA, GL_FLOAT, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
+    
     glBindTexture(GL_TEXTURE_2D, Instance()->renderTargets.normal);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, fbWidth, fbHeight, 0, GL_RGB, GL_FLOAT, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, fbWidth, fbHeight, 0, GL_RG, GL_FLOAT, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST); 
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glBindTexture(GL_TEXTURE_2D, Instance()->renderTargets.properties);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, fbWidth, fbHeight, 0, GL_RGB, GL_FLOAT, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST); 
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glBindTexture(GL_TEXTURE_2D, Instance()->renderTargets.emissive);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, fbWidth, fbHeight, 0, GL_RGB, GL_FLOAT, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST); 
-    glGenerateMipmap(GL_TEXTURE_2D);
-
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    
     glGenTextures(1, &Instance()->depthStencilBuffer);
     glBindTexture(GL_TEXTURE_2D, Instance()->depthStencilBuffer);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, fbWidth, fbHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    //glGenRenderbuffers(1, &Instance()->depthStencilBuffer);
-    //glBindRenderbuffer(GL_RENDERBUFFER, Instance()->depthStencilBuffer);
-    //glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, Instance()->frameSizeW, Instance()->frameSizeH);
     
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, Instance()->renderTargets.albedo, 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, Instance()->renderTargets.normal, 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, Instance()->renderTargets.properties, 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, Instance()->renderTargets.emissive, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, Instance()->renderTargets.light, 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, Instance()->depthStencilBuffer, 0);
-    //glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, Instance()->depthStencilBuffer);
     
-    const GLenum drawbuffers[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
-    glDrawBuffers(4, drawbuffers);
+    const GLenum drawbuffers[1] = { GL_COLOR_ATTACHMENT0 };
+    glDrawBuffers(1, drawbuffers);
 
     { GLenum err = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     assert(err == GL_FRAMEBUFFER_COMPLETE); }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // setup shadow pass
-    glGenTextures(1, &globalShadowMap);
-    glBindTexture(GL_TEXTURE_2D, globalShadowMap);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, shadowMapSize, shadowMapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    glGenFramebuffers(1, &globalShadowFrameBuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, globalShadowFrameBuffer);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, globalShadowMap, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-
-    // setup a shadow camera
-    Render::CameraCreateInfo shadowCameraInfo;
-    shadowCameraInfo.hash = CAMERA_SHADOW;
-    shadowCameraInfo.projection = glm::ortho(-50.0f, 50.0f, -50.0f, 50.0f, 0.1f, 500.0f);
-    shadowCameraInfo.view = glm::lookAt(glm::vec3(-20.0f, 60.0f, -10.0f),
-                                        glm::vec3(0.0f, 0.0f, 0.0f),
-                                        glm::vec3(0.0f, 1.0f, 0.0f));
-    LightServer::globalLightDirection = shadowCameraInfo.view[2];
-
-    CameraManager::CreateCamera(shadowCameraInfo);
+    LightServer::UpdateWorkGroups(fbWidth, fbHeight);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     Debug::InitDebugRendering();
-    Instance()->grid = new Grid();
+    
+    SetupParticleSystem();
 }
 
 void RenderDevice::Draw(ModelId model, glm::mat4 localToWorld)
@@ -199,22 +227,199 @@ void RenderDevice::Draw(ModelId model, glm::mat4 localToWorld)
     Instance()->drawCommands.push_back({ model, localToWorld });
 }
 
-void RenderDevice::StaticGeometryPass()
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::StaticShadowPass()
 {
-    glBindFramebuffer(GL_FRAMEBUFFER, Instance()->geometryBuffer);
+    uint shadowMapSize = LightServer::GetShadowMapSize();
+    glViewport(0, 0, shadowMapSize, shadowMapSize);
+    glBindFramebuffer(GL_FRAMEBUFFER, LightServer::GetGlobalShadowFramebuffer());
     glClear(GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
+    Camera const* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
+    Camera* const shadowCamera = CameraManager::GetCamera(CAMERA_SHADOW);
+
+    glm::vec3 shadowCamOffset = glm::normalize(LightServer::globalLightDirection) * 250.0f;
+    glm::vec3 shadowCamTarget = glm::vec3(mainCamera->invView[3]);
+    shadowCamTarget.y = 0.0f;
+    shadowCamera->view = glm::lookAt(shadowCamTarget + shadowCamOffset,
+        shadowCamTarget,
+        glm::vec3(0.0f, 1.0f, 0.0f));
+
+    CameraManager::UpdateCamera(shadowCamera);
+
+    auto programHandle = Render::ShaderResource::GetProgramHandle(staticShadowProgram);
+    glUseProgram(programHandle);
+    glUniformMatrix4fv(glGetUniformLocation(programHandle, "ViewProjection"), 1, false, &shadowCamera->viewProjection[0][0]);
+
+    GLuint baseColorFactorLocation = glGetUniformLocation(programHandle, "BaseColorFactor");
+    GLuint modelLocation = glGetUniformLocation(programHandle, "Model");
+    GLuint alphaCutoffLocation = glGetUniformLocation(programHandle, "AlphaCutoff");
+
+    // Draw opaque first
+    for (auto const& cmd : this->drawCommands)
+    {
+        Model const& model = GetModel(cmd.modelId);
+        glUniformMatrix4fv(modelLocation, 1, false, &cmd.transform[0][0]);
+
+        for (auto const& mesh : model.meshes)
+        {
+            for (auto& primitiveId : mesh.opaquePrimitives)
+            {
+                auto& primitive = mesh.primitives[primitiveId];
+
+                glActiveTexture(GL_TEXTURE0 + Model::Material::TEXTURE_BASECOLOR);
+                glBindTexture(GL_TEXTURE_2D, Render::TextureResource::GetTextureHandle(primitive.material.textures[Model::Material::TEXTURE_BASECOLOR]));
+                glUniform1i(Model::Material::TEXTURE_BASECOLOR, Model::Material::TEXTURE_BASECOLOR);
+
+                glUniform4fv(baseColorFactorLocation, 1, &primitive.material.baseColorFactor[0]);
+
+                if (primitive.material.alphaMode == Model::Material::AlphaMode::Mask)
+                    glUniform1f(alphaCutoffLocation, primitive.material.alphaCutoff);
+                else
+                    glUniform1f(alphaCutoffLocation, 0);
+
+                glBindVertexArray(primitive.vao);
+                glDrawElements(GL_TRIANGLES, primitive.numIndices, primitive.indexType, (void*)(intptr_t)primitive.offset);
+            }
+        }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::StaticGeometryPrepass()
+{
     Camera* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
+    glBindFramebuffer(GL_FRAMEBUFFER, Instance()->forwardFrameBuffer);
+    glClearColor(255.0f, 0, 0, 1);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
-    this->grid->Draw(&mainCamera->viewProjection[0][0]);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 
+    // Models
+    auto staticOpaquePrepassProgramHandle = Render::ShaderResource::GetProgramHandle(staticShadowProgram);
+    glUseProgram(staticOpaquePrepassProgramHandle);
+    glUniformMatrix4fv(glGetUniformLocation(staticOpaquePrepassProgramHandle, "ViewProjection"), 1, false, &mainCamera->viewProjection[0][0]);
+    
+    GLuint baseColorFactorLocation = glGetUniformLocation(staticOpaquePrepassProgramHandle, "BaseColorFactor");
+    GLuint modelLocation = glGetUniformLocation(staticOpaquePrepassProgramHandle, "Model");
+    GLuint alphaCutoffLocation = glGetUniformLocation(staticOpaquePrepassProgramHandle, "AlphaCutoff");
+
+    // Opaque
+    for (auto const& cmd : this->drawCommands)
+    {
+        Model const& model = GetModel(cmd.modelId);
+        glUniformMatrix4fv(modelLocation, 1, false, &cmd.transform[0][0]);
+
+        for (auto const& mesh : model.meshes)
+        {
+            for (auto& primitiveId : mesh.opaquePrimitives)
+            {
+                auto& primitive = mesh.primitives[primitiveId];
+
+                glActiveTexture(GL_TEXTURE0 + Model::Material::TEXTURE_BASECOLOR);
+                glBindTexture(GL_TEXTURE_2D, Render::TextureResource::GetTextureHandle(primitive.material.textures[Model::Material::TEXTURE_BASECOLOR]));
+                glUniform1i(Model::Material::TEXTURE_BASECOLOR, Model::Material::TEXTURE_BASECOLOR);
+                glUniform4fv(baseColorFactorLocation, 1, &primitive.material.baseColorFactor[0]);
+
+                if (primitive.material.alphaMode == Model::Material::AlphaMode::Mask)
+                    glUniform1f(alphaCutoffLocation, primitive.material.alphaCutoff);
+                else
+                    glUniform1f(alphaCutoffLocation, 0);
+
+                glBindVertexArray(primitive.vao);
+                glDrawElements(GL_TRIANGLES, primitive.numIndices, primitive.indexType, (void*)(intptr_t)primitive.offset);
+            }
+        }
+    }
+
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+}
+
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::LightCullingPass()
+{
+    GLuint lightCullingProgramHandle = ShaderResource::GetProgramHandle(lightCullingProgram);
+    glUseProgram(lightCullingProgramHandle);
+
+    Camera* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
+    glUniformMatrix4fv(glGetUniformLocation(lightCullingProgramHandle, "View"), 1, false, &mainCamera->view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(lightCullingProgramHandle, "Projection"), 1, false, &mainCamera->projection[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(lightCullingProgramHandle, "ViewProjection"), 1, false, &mainCamera->viewProjection[0][0]);
+
+    // Bind depth map texture to texture location 20 (which will not be used by any model texture)
+    glActiveTexture(GL_TEXTURE30);
+    glUniform1i(glGetUniformLocation(lightCullingProgramHandle, "DepthMap"), 30);
+    glBindTexture(GL_TEXTURE_2D, depthStencilBuffer);
+
+    glUniform1i(glGetUniformLocation(lightCullingProgramHandle, "NumPointLights"), LightServer::GetNumPointLights());
+    
+    // Bind shader storage buffer objects for the light and index buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, LightServer::GetBuffer(LightServer::PointLightBuffer::POSITIONS));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, LightServer::GetBuffer(LightServer::PointLightBuffer::RADII));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, LightServer::GetBuffer(LightServer::PointLightBuffer::VISIBLE_INDICES));
+    
+    glUniform2ui(glGetUniformLocation(lightCullingProgramHandle, "NumTiles"), LightServer::GetWorkGroupsX(), LightServer::GetWorkGroupsY());
+
+    glDispatchCompute(LightServer::GetWorkGroupsX(), LightServer::GetWorkGroupsY(), 1);
+
+    glActiveTexture(GL_TEXTURE30);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::StaticForwardPass()
+{   
+    glBindFramebuffer(GL_FRAMEBUFFER, Instance()->forwardFrameBuffer);
+
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+
+    glDepthFunc(GL_LESS);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    Camera* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
+    
     auto programHandle = Render::ShaderResource::GetProgramHandle(staticGeometryProgram);
     glUseProgram(programHandle);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, LightServer::GetBuffer(LightServer::PointLightBuffer::POSITIONS));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, LightServer::GetBuffer(LightServer::PointLightBuffer::COLORS));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, LightServer::GetBuffer(LightServer::PointLightBuffer::RADII));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, LightServer::GetBuffer(LightServer::PointLightBuffer::VISIBLE_INDICES));
+
+    glUniform2ui(glGetUniformLocation(programHandle, "NumTiles"), LightServer::GetWorkGroupsX(), LightServer::GetWorkGroupsY());
     glUniformMatrix4fv(glGetUniformLocation(programHandle, "ViewProjection"), 1, false, &mainCamera->viewProjection[0][0]);
     
+    glUniform4fv(glGetUniformLocation(programHandle, "CameraPosition"), 1, &mainCamera->view[3][0]);
+
+    LightServer::Update(staticGeometryProgram);
+
+    glActiveTexture(GL_TEXTURE16);
+    glBindTexture(GL_TEXTURE_2D, LightServer::GetGlobalShadowMapHandle());
+    glUniform1i(glGetUniformLocation(programHandle, "GlobalShadowMap"), 16);
+    Camera* globalShadowCamera = CameraManager::GetCamera(CAMERA_SHADOW);
+    glUniformMatrix4fv(glGetUniformLocation(programHandle, "GlobalShadowMatrix"), 1, false, &globalShadowCamera->viewProjection[0][0]);
+
     GLuint baseColorFactorLocation = glGetUniformLocation(programHandle, "BaseColorFactor");
     GLuint emissiveFactorLocation = glGetUniformLocation(programHandle, "EmissiveFactor");
     GLuint metallicFactorLocation = glGetUniformLocation(programHandle, "MetallicFactor");
@@ -259,143 +464,13 @@ void RenderDevice::StaticGeometryPass()
             }
         }
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void Render::RenderDevice::LightPass()
-{
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    Camera* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
-    
-    { // Begin directional light drawing
-        GLuint programHandle = Render::ShaderResource::GetProgramHandle(directionalLightProgram);
-        glUseProgram(programHandle);
-
-        glUniform4fv(glGetUniformLocation(programHandle, "CameraPosition"), 1, &mainCamera->view[3][0]);
-        glUniformMatrix4fv(glGetUniformLocation(programHandle, "InvView"), 1, false, &mainCamera->invView[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(programHandle, "InvProjection"), 1, false, &mainCamera->invProjection[0][0]);
-
-        glActiveTexture(GL_TEXTURE16);
-        glBindTexture(GL_TEXTURE_2D, globalShadowMap);
-        glUniform1i(glGetUniformLocation(programHandle, "GlobalShadowMap"), 16);
-        Camera* globalShadowCamera = CameraManager::GetCamera(CAMERA_SHADOW);
-        glUniformMatrix4fv(glGetUniformLocation(programHandle, "GlobalShadowMatrix"), 1, false, &globalShadowCamera->viewProjection[0][0]);
-
-        LightServer::Update(directionalLightProgram);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.albedo);
-        glUniform1i(0, 0);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.normal);
-        glUniform1i(1, 1);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.properties);
-        glUniform1i(2, 2);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.emissive);
-        glUniform1i(3, 3);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, this->depthStencilBuffer);
-        glUniform1i(4, 4);
-
-        glBindVertexArray(fullscreenQuadVAO);
-
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-    } // end directional light drawing
-
-    { // begin drawing point lights
-        GLuint programHandle = Render::ShaderResource::GetProgramHandle(pointlightProgram);
-        glUseProgram(programHandle);
-        
-        glUniform4fv(glGetUniformLocation(programHandle, "CameraPosition"), 1, &mainCamera->view[3][0]);
-        glUniformMatrix4fv(glGetUniformLocation(programHandle, "InvView"), 1, false, &mainCamera->invView[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(programHandle, "InvProjection"), 1, false, &mainCamera->invProjection[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(programHandle, "ViewProjection"), 1, false, &mainCamera->viewProjection[0][0]);
-        
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.albedo);
-        glUniform1i(0, 0);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.normal);
-        glUniform1i(1, 1);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, this->renderTargets.properties);
-        glUniform1i(2, 2);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, this->depthStencilBuffer);
-        glUniform1i(4, 4);
-        
-        LightServer::DrawPointLights(pointlightProgram);
-    } // end drawing point lights
-}
-
-void RenderDevice::StaticShadowPass()
-{
-    glViewport(0, 0, shadowMapSize, shadowMapSize);
-    glBindFramebuffer(GL_FRAMEBUFFER, globalShadowFrameBuffer);
-    glClear(GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-
-    Camera const* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
-    Camera* const shadowCamera = CameraManager::GetCamera(CAMERA_SHADOW);
-
-    glm::vec3 camForward = glm::vec3(mainCamera->invView[2]);
-    glm::vec3 camUp = glm::vec3(mainCamera->invView[1]);
-    glm::vec3 shadowCamOffset = glm::normalize(glm::vec3(-2.0f, 6.0f, -1.0f)) * 250.0f;
-    glm::vec3 shadowCamTarget = glm::vec3(mainCamera->invView[3]) - camForward * 45.0f;
-    shadowCamTarget.y = 0.0f;
-    shadowCamera->view = glm::lookAt(shadowCamTarget + shadowCamOffset,
-                                     shadowCamTarget,
-                                     glm::vec3(0.0f, 1.0f, 0.0f));
-
-    CameraManager::UpdateCamera(shadowCamera);
-
-    auto programHandle = Render::ShaderResource::GetProgramHandle(staticShadowProgram);
-    glUseProgram(programHandle);
-    //glUniformMatrix4fv(glGetUniformLocation(programHandle, "ViewProjection"), 1, false, &shadowCamera->viewProjection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(programHandle, "View"), 1, false, &shadowCamera->view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(programHandle, "Projection"), 1, false, &shadowCamera->projection[0][0]);
-    
-    GLuint baseColorFactorLocation = glGetUniformLocation(programHandle, "BaseColorFactor");
-    GLuint modelLocation = glGetUniformLocation(programHandle, "Model");
-    GLuint alphaCutoffLocation = glGetUniformLocation(programHandle, "AlphaCutoff");
-
-    // Draw opaque first
-    for (auto const& cmd : this->drawCommands)
-    {
-        Model const& model = GetModel(cmd.modelId);
-        glUniformMatrix4fv(modelLocation, 1, false, &cmd.transform[0][0]);
-
-        for (auto const& mesh : model.meshes)
-        {
-            for (auto& primitiveId : mesh.opaquePrimitives)
-            {
-                auto& primitive = mesh.primitives[primitiveId];
-                
-                glActiveTexture(GL_TEXTURE0 + Model::Material::TEXTURE_BASECOLOR);
-                glBindTexture(GL_TEXTURE_2D, Render::TextureResource::GetTextureHandle(primitive.material.textures[Model::Material::TEXTURE_BASECOLOR]));
-                glUniform1i(Model::Material::TEXTURE_BASECOLOR, Model::Material::TEXTURE_BASECOLOR);
-                    
-                glUniform4fv(baseColorFactorLocation, 1, &primitive.material.baseColorFactor[0]);
-                
-                if (primitive.material.alphaMode == Model::Material::AlphaMode::Mask)
-                    glUniform1f(alphaCutoffLocation, primitive.material.alphaCutoff);
-                else
-                    glUniform1f(alphaCutoffLocation, 0);
-
-                glBindVertexArray(primitive.vao);
-                glDrawElements(GL_TRIANGLES, primitive.numIndices, primitive.indexType, (void*)(intptr_t)primitive.offset);
-            }
-        }
-    }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-void RenderDevice::SkyboxPass()
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::SkyboxPass()
 {
     Camera* const camera = CameraManager::GetCamera(CAMERA_MAIN);
     glEnable(GL_DEPTH_TEST);
@@ -408,36 +483,154 @@ void RenderDevice::SkyboxPass()
     glUniform1i(0, 0);
     glUniformMatrix4fv(1, 1, false, &camera->invProjection[0][0]);
     glUniformMatrix4fv(2, 1, false, &camera->invView[0][0]);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
     glDepthFunc(GL_LESS);
 }
 
-void RenderDevice::Render(Display::Window* wnd)
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::ParticlePass(float dt)
 {
-    CameraManager::OnBeforeRender();
+    GLuint simProgramHandle = ShaderResource::GetProgramHandle(particles.particleSimComputeShaderId);
+    glUseProgram(simProgramHandle);
+    glUniform1f(glGetUniformLocation(simProgramHandle, "TimeStep"), dt);
+    
+    uint32_t readIndex = (particles.writeIndex + 1) % 2;
 
-    wnd->MakeCurrent();
+    for (auto emitter : particles.emitters)
+    {
+        // Integrate particle dynamics
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, emitter->bufPositions[readIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, emitter->bufColors[readIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, emitter->bufVelocities[readIndex]);
+        
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, emitter->bufPositions[particles.writeIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, emitter->bufColors[particles.writeIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, emitter->bufVelocities[particles.writeIndex]);
 
-    Instance()->StaticShadowPass();
+        glBindBuffer(GL_UNIFORM_BUFFER, particles.emitterBlockUBO);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 10, particles.emitterBlockUBO);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(ParticleSystem::ParticleEmitter::EmitterBlock), &emitter->data, GL_STATIC_DRAW);
 
+        glUniform3ui(glGetUniformLocation(simProgramHandle, "Random"), Core::FastRandom(), Core::FastRandom(), Core::FastRandom());
+
+        const int numWorkGroups[3] = {
+            emitter->data.numParticles / 1024,
+            1,
+            1
+        };
+        glDispatchCompute(numWorkGroups[0], numWorkGroups[1], numWorkGroups[2]);
+    }
+
+    Camera const* const mainCamera = CameraManager::GetCamera(CAMERA_MAIN);
+    GLuint programHandle = ShaderResource::GetProgramHandle(particles.particleShaderId);
+    glUseProgram(programHandle);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    glm::mat4 billboardView = glm::mat4(
+        { 1, 0, 0, 0 },
+        { 0, 1, 0, 0 },
+        { 0, 0, 1, 0 },
+        mainCamera->view[3]
+    );
+    glm::mat4 billboardViewProjection = mainCamera->projection * billboardView;
+
+    glUniformMatrix4fv(glGetUniformLocation(programHandle, "ViewProjection"), 1, false, &mainCamera->viewProjection[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(programHandle, "BillBoardViewProjection"), 1, false, &billboardViewProjection[0][0]);
+    GLuint particleOffsetLoc = glGetUniformLocation(programHandle, "ParticleOffset");
+
+    for (auto emitter : particles.emitters)
+    { // DRAW
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, emitter->bufPositions[readIndex]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, emitter->bufColors[readIndex]);
+
+        // Split drawcalls into smaller bits, since integer division on AMD cards is inaccurate
+        int numVerts = emitter->data.numParticles * 6;
+        const int numVertsPerDrawCall = 0x44580; // has to be divisible with 6
+        int numDrawCalls = emitter->data.numParticles / numVertsPerDrawCall;
+        int particleOffset = 0;
+        while (numVerts > 0)
+        {
+            int drawVertCount = glm::min(numVerts, numVertsPerDrawCall);
+            glUniform1i(particleOffsetLoc, particleOffset);
+            glDrawArrays(GL_TRIANGLES, 0, drawVertCount);
+            numVerts -= drawVertCount;
+            particleOffset += drawVertCount / 6;
+        }
+    }
+
+    glUseProgram(0);
+
+    // swap doublebuffer particles index
+    particles.writeIndex = readIndex;
+}
+
+void
+Render::RenderDevice::FinalizePass(Display::Window* wnd)
+{
     int w, h;
     wnd->GetSize(w, h);
     glViewport(0, 0, w, h);
 
-    Instance()->StaticGeometryPass();
+    glBlitNamedFramebuffer(this->forwardFrameBuffer, 0, 0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
 
-    Instance()->LightPass();
+//------------------------------------------------------------------------------
+/**
+*/
+void
+RenderDevice::Render(Display::Window* wnd, float dt)
+{
+    TextureResource::PollPendingTextureLoads();
 
+    wnd->MakeCurrent();
+
+    CameraManager::OnBeforeRender();
+    LightServer::OnBeforeRender();
+
+    // Begin depth prepass renderpass
+    int w, h;
+    wnd->GetSize(w, h);
+    glViewport(0, 0, w, h);
+
+    Instance()->StaticGeometryPrepass();
+    // end depth prepass renderpass
+
+    // begin light culling compute pass
+    Instance()->LightCullingPass();
+    // end lightculling compute pass
+
+    // Begin sun shadowmap renderpass. this has a single subpass, with two subpass dependencies for layout transitions (shader-read -> depth-write, and back)
+    Instance()->StaticShadowPass();
+    // end sun shadowmap renderpass
+
+    // begin forward shading renderpass
+    glViewport(0, 0, w, h);
+
+    Instance()->StaticForwardPass();
+    
     if (Instance()->skybox != InvalidResourceId)
     {
         Instance()->SkyboxPass();
     }
     
-    Instance()->drawCommands.clear();
+    Instance()->ParticlePass(dt);
 
+    // end forward shading renderpass
+
+    // begin debug drawing renderpass
     Debug::DispatchDebugDrawing();
+    LightServer::DebugDrawPointLights();
+    // end debug drawing renderpass
 
+    // begin finalization pass and present
+    Instance()->FinalizePass(wnd);
+    // end finalization pass and present
 
+    Instance()->drawCommands.clear();
 }
 
 } // namespace Render

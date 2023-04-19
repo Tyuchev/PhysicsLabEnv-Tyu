@@ -51,7 +51,7 @@ SpaceGameApp::Open()
 {
 	App::Open();
 	this->window = new Display::Window;
-    this->window->SetSize(1024, 720);
+    this->window->SetSize(2500, 2000);
 
     if (this->window->Open())
 	{
@@ -214,7 +214,7 @@ SpaceGameApp::Run()
         RenderDevice::Draw(ship.model, ship.transform);
 
         // Execute the entire rendering pipeline
-        RenderDevice::Render(this->window);
+        RenderDevice::Render(this->window, dt);
 
 		// transfer new frame to window
 		this->window->SwapBuffers();

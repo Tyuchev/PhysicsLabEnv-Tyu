@@ -324,7 +324,7 @@ namespace gltf
         };
 
         FX_GLTF_INLINE_CONSTEXPR uint32_t DefaultMaxBufferCount = 8;
-        FX_GLTF_INLINE_CONSTEXPR uint32_t DefaultMaxMemoryAllocation = 128 * 1024 * 1024;
+        FX_GLTF_INLINE_CONSTEXPR uint32_t DefaultMaxMemoryAllocation = 3048 * 1024 * 1024;
         FX_GLTF_INLINE_CONSTEXPR std::size_t HeaderSize{ sizeof(GLBHeader) };
         FX_GLTF_INLINE_CONSTEXPR std::size_t ChunkHeaderSize{ sizeof(ChunkHeader) };
         FX_GLTF_INLINE_CONSTEXPR uint32_t GLBHeaderMagic = 0x46546c67u;

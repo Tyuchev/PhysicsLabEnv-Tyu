@@ -246,6 +246,7 @@ Window::Open()
 	glfwWindowHint(GLFW_GREEN_BITS, 8);
 	glfwWindowHint(GLFW_BLUE_BITS, 8);
 	glfwWindowHint(GLFW_SRGB_CAPABLE, GL_TRUE);
+	//glfwWindowHint(GLFW_SAMPLES, 4);
 
 	// open window
 	this->window = glfwCreateWindow(this->width, this->height, this->title.c_str(), nullptr, nullptr);
@@ -278,10 +279,10 @@ Window::Open()
 
 		// setup stuff
 		//glEnable(GL_FRAMEBUFFER_SRGB);
-		//glEnable(GL_LINE_SMOOTH);
-		//glEnable(GL_POLYGON_SMOOTH);
-		//glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-		//glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+		glEnable(GL_MULTISAMPLE);
+
+		// disable vsync
+		glfwSwapInterval(0);
 
 		// setup viewport
 		glViewport(0, 0, this->width, this->height);
@@ -320,7 +321,7 @@ Window::Open()
 #if _WIN32
 	ImFont* font = io.Fonts->AddFontFromFileTTF("c:/windows/fonts/tahoma.ttf", 14, &config);
 #else
-	ImFont* font = io.Fonts->AddFontFromFileTTF("fonts/FreeSans.ttf", 18, &config);
+	ImFont* font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 18, &config);
 #endif
 
 	unsigned char* buffer;
@@ -335,6 +336,7 @@ Window::Open()
 
 	// increase window count and return result
 	Window::WindowCount++;
+
 	return this->window != nullptr;
 }
 

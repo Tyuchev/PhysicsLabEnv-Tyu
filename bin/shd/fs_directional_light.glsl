@@ -1,4 +1,6 @@
 #version 430
+#include "shd/utils.glsl"
+
 layout(location=0) in vec2 in_TexCoords;
 
 out vec4 out_Color;
@@ -59,31 +61,6 @@ vec3 CalculateF0(in vec3 color, in float metallic, const vec3 def)
 	// F0 = vec3(0.04);
 	// for metallic surfaces we interpolate between F0 and the albedo value with metallic value as our lerp weight
 	return mix(def, color.rgb, metallic);
-}
-
-float LinearizeDepth(float depth, vec2 focalLength)
-{
-    return (focalLength.x * focalLength.y) / (depth * (focalLength.x - focalLength.y) + focalLength.y);
-}
-
-vec4 PixelToProjection(vec2 screenCoord, float depth)
-{
-    // we use DX depth range [0,1], for GL where depth is [-1,1], we would need depth * 2 - 1 too
-    return vec4(screenCoord * 2.0f - 1.0f, depth * 2.0f - 1.0f, 1.0f);
-}
-
-vec4 PixelToView(vec2 screenCoord, float depth, mat4 invProjection)
-{
-    vec4 projectionSpace = PixelToProjection(screenCoord, depth);
-    vec4 viewSpace = invProjection * projectionSpace;
-    viewSpace /= viewSpace.w;
-    return viewSpace;
-}
-
-vec4 PixelToWorld(vec2 screenCoord, float depth, mat4 invView, mat4 invProjection)
-{
-    vec4 viewSpace = PixelToView(screenCoord, depth, invProjection);
-    return invView * viewSpace;
 }
 
 void main()

@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------
 #include "GL/glew.h"
 #include "renderdevice.h"
+#include "resourceid.h"
 
 namespace Render
 {
@@ -74,6 +75,18 @@ enum class WrappingMode : uint16_t
     Repeat = 10497
 };
 
+struct TextureLoadInfo
+{
+    std::string name;
+    void* buffer;
+    uint64_t bytes;
+    MagFilter magFilter;
+    MinFilter minFilter;
+    WrappingMode wrappingModeS;
+    WrappingMode wrappingModeT;
+    bool sRGB = false; // is buffer data in sRGB color space?
+    TextureResourceId placeholder = InvalidResourceId; // placeholder texture while the texture is being loaded
+};
 
 class TextureResource
 {
@@ -94,6 +107,11 @@ public:
     // destroy singleton
     static void Destroy();
 
+    static void PollPendingTextureLoads();
+
+    // PNG or JPG
+    static TextureResourceId LoadTextureFromMemory(TextureLoadInfo const& info);
+
     static TextureResourceId LoadTexture(const char* path, MagFilter mag, MinFilter min, WrappingMode wrapModeS, WrappingMode wrapModeT, bool sRGB);
     static TextureResourceId LoadTextureFromMemory(std::string name, void* buffer, uint64_t bytes, ImageId imageId, MagFilter, MinFilter, WrappingMode, WrappingMode, bool sRGB);
     
@@ -113,15 +131,12 @@ public:
     static TextureResourceId GetDefaultMetallicRoughnessTexture();
     static TextureResourceId GetDefaultNormalTexture();
 
-private:
-    struct Image
-    {
-        GLuint handle;
-        ImageExtents extent;
-        ImageType type;
-    };
+    static void LoadTextureLibrary(std::string folder);
 
-    std::vector<Image> images;
+private:
+    std::vector<GLuint> imageHandles;
+    std::vector<ImageExtents> imageExtents;
+    std::vector<ImageType> imageTypes;
     std::unordered_map<std::string, ImageId> imageRegistry;
 
     TextureResourceId whiteTexture = InvalidResourceId;

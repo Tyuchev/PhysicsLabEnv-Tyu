@@ -24,13 +24,13 @@ struct PointLightId
         ret.generation = (id & 0xFFC0000) >> 22;
         return ret;
     }
-    explicit operator uint32_t() const
+    explicit constexpr operator uint32_t() const
     {
         return ((generation << 22) & 0xFFC0000) + (index & 0x003FFFFF);
     }
-    static PointLightId Invalid()
+    static constexpr PointLightId Invalid()
     {
-        return Create( 0xFFFFFFFF );
+        return { 0xFFFFFFFF, 0xFFFFFFFF };
     }
     constexpr uint32_t HashCode() const
     {

@@ -7,6 +7,8 @@
 #include "gltf.h"
 #include "textureresource.h"
 
+#include "lightserver.h"
+
 namespace Render
 {
 
@@ -14,7 +16,11 @@ static uint nameCounter = 0;
 static std::vector<Model> modelAllocator;
 static std::unordered_map<std::string, ModelId> modelRegistry;
 
-int SlotFromGltf(std::string const& attr)
+//------------------------------------------------------------------------------
+/**
+*/
+int
+SlotFromGltf(std::string const& attr)
 {
 	if (attr == "POSITION")		return 0;
 	if (attr == "NORMAL")		return 1;
@@ -23,12 +29,18 @@ int SlotFromGltf(std::string const& attr)
 	if (attr == "COLOR_0")		return 4;
 	if (attr == "JOINTS_0")		return 5;
 	if (attr == "WEIGHTS_0")	return 6;
+	if (attr == "TEXCOORD_1")	return 7;
+	if (attr == "TEXCOORD_2")	return 8;
 	
 	n_error("Attribute location not set!\n");
 	return 0;
 }
 
-void InferBufferTargets(fx::gltf::Document& model)
+//------------------------------------------------------------------------------
+/**
+*/
+void
+InferBufferTargets(fx::gltf::Document& model)
 {
     bool infer = false;
 	for (unsigned i = 0; i < model.bufferViews.size(); i++)
@@ -62,7 +74,11 @@ void InferBufferTargets(fx::gltf::Document& model)
     }
 }
 
-Model LoadGLTF(std::string const& uri)
+//------------------------------------------------------------------------------
+/**
+*/
+Model
+LoadGLTF(std::string const& uri)
 {
 	fx::gltf::Document doc;
 
@@ -90,16 +106,17 @@ Model LoadGLTF(std::string const& uri)
 		numBuffers += (doc.bufferViews[i].target != fx::gltf::BufferView::TargetType::None);
 	}
 
-	Model gltf;
-	gltf.buffers.reserve(numBuffers);
-	for (int i = 0; i < numBuffers; i++)
-		gltf.buffers.push_back(-1); // FIXME: missing function in vector?
-    glGenBuffers(numBuffers, &gltf.buffers[0]);
+	std::vector<fx::gltf::Primitive const*> proxyPrimitives;
+
+	Model model;
+	model.buffers.resize(numBuffers, -1);
+	glGenBuffers(numBuffers, &model.buffers[0]);
 
 	std::vector<int> bufferViewMap(numBufferViews);
 
 	//TODO: We should use less buffers and possibly rebind less often.
 	//		Put everything in one buffer and just use the offsets in the attribute pointers
+
 	unsigned bufferIndex = 0;
     for (unsigned i = 0; i < numBufferViews; i++)
     {
@@ -107,8 +124,13 @@ Model LoadGLTF(std::string const& uri)
 		if (bufferView.target != fx::gltf::BufferView::TargetType::None)
 		{
 			GLenum const target = (GLenum)bufferView.target;
-			glBindBuffer(target, gltf.buffers[bufferIndex]);
-			glBufferData(target, bufferView.byteLength, &(doc.buffers[bufferView.buffer].data[0]) + bufferView.byteOffset, GL_STATIC_DRAW);
+			glBindBuffer(target, model.buffers[bufferIndex]);
+			glBufferData(
+				target,
+				bufferView.byteLength,
+				&(doc.buffers[bufferView.buffer].data[0]) + bufferView.byteOffset,
+				GL_STATIC_DRAW
+			);
 			bufferViewMap[i] = bufferIndex;
 			bufferIndex++;
 		}
@@ -131,35 +153,31 @@ Model LoadGLTF(std::string const& uri)
 		if (sampler.minFilter == fx::gltf::Sampler::MinFilter::None)
 			sampler.minFilter = fx::gltf::Sampler::MinFilter::NearestMipMapLinear;
 
-		ImageCreateInfo info;
-		info.extents = {};
-		info.type = ImageType::TEXTURE_2D;
-
 		std::string name;
-		ImageId id;
+		ImageId id = InvalidResourceId;
 		if (image.IsEmbeddedResource())
 		{
 			// Make up some random name
-			uint guid = nameCounter++;
+			uint uid = nameCounter++;
 			name = "embedded_image_";
-			name += std::to_string(guid);
-
-			id = TextureResource::AllocateImage(info);
+			name += std::to_string(uid);
 			std::vector<uint8_t> data;
 
 			image.MaterializeData(data);
 
-			TextureResource::LoadTextureFromMemory(
-				name,
-				&data[0],
-				data.size(),
-				id,
-				(Render::MagFilter)sampler.magFilter,
-				(Render::MinFilter)sampler.minFilter,
-				(Render::WrappingMode)sampler.wrapS,
-				(Render::WrappingMode)sampler.wrapT,
-				sRGB
-			);
+			TextureLoadInfo texInfo = {
+				.name = name,
+				.buffer = &data[0],
+				.bytes = data.size(),
+				.magFilter = (Render::MagFilter)sampler.magFilter,
+				.minFilter = (Render::MinFilter)sampler.minFilter,
+				.wrappingModeS = (Render::WrappingMode)sampler.wrapS,
+				.wrappingModeT = (Render::WrappingMode)sampler.wrapT,
+				.sRGB = sRGB,
+				.placeholder = TextureResource::GetWhiteTexture()
+			};
+
+			id = TextureResource::LoadTextureFromMemory(texInfo);
 		}
 		else if (image.uri.empty())
 		{
@@ -168,22 +186,23 @@ Model LoadGLTF(std::string const& uri)
 			fx::gltf::Buffer const& buffer = doc.buffers[bufferView.buffer];
 
 			// Make up some random name
-			uint guid = nameCounter++;
+			uint uid = nameCounter++;
 			name = "embedded_image_";
-			name += std::to_string(guid);
+			name += std::to_string(uid);
 
-			id = TextureResource::AllocateImage(info);
-			TextureResource::LoadTextureFromMemory(
-				name,
-				(void*)&buffer.data[bufferView.byteOffset],
-				bufferView.byteLength,
-				id,
-				(Render::MagFilter)sampler.magFilter,
-				(Render::MinFilter)sampler.minFilter,
-				(Render::WrappingMode)sampler.wrapS,
-				(Render::WrappingMode)sampler.wrapT,
-				sRGB
-			);
+			TextureLoadInfo texInfo = {
+				.name = name,
+				.buffer = (void*)&buffer.data[bufferView.byteOffset],
+				.bytes = bufferView.byteLength,
+				.magFilter = (Render::MagFilter)sampler.magFilter,
+				.minFilter = (Render::MinFilter)sampler.minFilter,
+				.wrappingModeS = (Render::WrappingMode)sampler.wrapS,
+				.wrappingModeT = (Render::WrappingMode)sampler.wrapT,
+				.sRGB = sRGB,
+				.placeholder = TextureResource::GetWhiteTexture()
+			};
+
+			id = TextureResource::LoadTextureFromMemory(texInfo);
 		}
 		else // external image
 		{
@@ -235,6 +254,7 @@ Model LoadGLTF(std::string const& uri)
         for (auto const& primitive : mesh.primitives)
         {
             Model::Mesh::Primitive p;
+
             glGenVertexArrays(1, &p.vao);
             glBindVertexArray(p.vao);
             for (auto const& attribute : primitive.attributes)
@@ -249,30 +269,28 @@ Model LoadGLTF(std::string const& uri)
                 attr.slot = SlotFromGltf(attribute.first);
 				attr.type = (GLenum)accessor.componentType;
 
-                switch (accessor.type)
-                {
-				case fx::gltf::Accessor::Type::Scalar:
-                    attr.components = 1;
-                    break;
-				case fx::gltf::Accessor::Type::Vec2:
-				case fx::gltf::Accessor::Type::Vec3:
-				case fx::gltf::Accessor::Type::Vec4:
-                    attr.components = (GLint)accessor.type;
-                    break;
-                default:
-                    n_assert(false);
-                    break;
-                }
+				n_assert((int)accessor.type > 0 && (int)accessor.type <= 4);
+				attr.components = (GLint)accessor.type;
                 
 				fx::gltf::BufferView const& bufferView = doc.bufferViews[accessor.bufferView];
 				fx::gltf::Buffer const& buffer = doc.buffers[bufferView.buffer];
-                glBindBuffer((GLenum)doc.bufferViews[accessor.bufferView].target, gltf.buffers[bufferViewMap[accessor.bufferView]]);
+                glBindBuffer(
+					(GLenum)doc.bufferViews[accessor.bufferView].target,
+					model.buffers[bufferViewMap[accessor.bufferView]]
+				);
 				glEnableVertexArrayAttrib(p.vao, attr.slot);
-                glVertexAttribPointer(attr.slot, attr.components, attr.type, attr.normalized, attr.stride, (void*)(intptr_t)attr.offset);
+                glVertexAttribPointer(
+					attr.slot,
+					attr.components,
+					attr.type,
+					attr.normalized,
+					attr.stride,
+					(void*)(intptr_t)attr.offset
+				);
             }
-            auto const& ibAccessor = doc.accessors[primitive.indices];
 
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gltf.buffers[bufferViewMap[ibAccessor.bufferView]]);
+            auto const& ibAccessor = doc.accessors[primitive.indices];
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.buffers[bufferViewMap[ibAccessor.bufferView]]);
             p.numIndices = ibAccessor.count;
 			p.offset = ibAccessor.byteOffset;
             p.indexType = (GLenum)ibAccessor.componentType;
@@ -281,6 +299,7 @@ Model LoadGLTF(std::string const& uri)
 			{
 				// TODO: cutout materials
 				fx::gltf::Material const& gltfMaterial = doc.materials[primitive.material];
+				
 				auto const& bcf = gltfMaterial.pbrMetallicRoughness.baseColorFactor;
 				p.material.baseColorFactor = glm::vec4(bcf[0], bcf[1], bcf[2], bcf[3]);
 				
@@ -317,14 +336,17 @@ Model LoadGLTF(std::string const& uri)
 
             m.primitives.push_back(std::move(p));
         }
-		gltf.meshes.push_back(std::move(m));
-        
+		model.meshes.push_back(std::move(m));
     }
-	
-    return gltf;
+
+    return model;
 }
 
-ModelId LoadModel(std::string name)
+//------------------------------------------------------------------------------
+/**
+*/
+ModelId
+LoadModel(std::string name)
 {
 	auto iter = modelRegistry.find(name);
 	if (iter != modelRegistry.end())
@@ -348,7 +370,11 @@ ModelId LoadModel(std::string name)
 	return LoadModel("assets/error.glb");
 }
 
-void UnloadModel(ModelId mid)
+//------------------------------------------------------------------------------
+/**
+*/
+void
+UnloadModel(ModelId mid)
 {
 	n_assert(IsModelValid(mid));
 	modelAllocator[mid].refcount--;
@@ -359,16 +385,23 @@ void UnloadModel(ModelId mid)
 	return;
 }
 
-Model const& GetModel(ModelId id)
+//------------------------------------------------------------------------------
+/**
+*/
+Model const&
+GetModel(ModelId id)
 {
     return modelAllocator[id];
 }
 
-bool const IsModelValid(ModelId)
+//------------------------------------------------------------------------------
+/**
+*/
+bool const
+IsModelValid(ModelId)
 {
 	// FIXME: we should use a generational id for the models.
 	return true;
 }
-
 
 } // namespace Render

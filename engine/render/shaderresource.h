@@ -6,7 +6,10 @@
     (C) 2019 Individual contributors, see AUTHORS file
 */
 //------------------------------------------------------------------------------
-#include "renderdevice.h"
+#include "resourceid.h"
+#include <vector>
+#include <string>
+#include <gl/glew.h>
 
 namespace Render
 {

@@ -7,16 +7,25 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include "renderdevice.h"
+
 namespace Render
 {
 
+//------------------------------------------------------------------------------
+/**
+*/
 ShaderResource::ShaderResource()
 {
     // empty
 }
 
-/// @todo	Check if shader has already been loaded
-ShaderResourceId ShaderResource::LoadShader(ShaderType type, const char* path)
+//------------------------------------------------------------------------------
+/**
+ * @todo	Check if shader has already been loaded
+*/
+ShaderResourceId
+ShaderResource::LoadShader(ShaderType type, const char* path)
 {
     printf("Loading shader %s... ", path);
     std::ifstream ifs(path);
@@ -29,8 +38,6 @@ ShaderResourceId ShaderResource::LoadShader(ShaderType type, const char* path)
     }
 
     // Preprocess includes
-    auto includes = content.find("#include");
-    
     // TODO: this can be improved
     auto Preprocess = [](std::string& src) -> std::string
     {
@@ -58,46 +65,31 @@ ShaderResourceId ShaderResource::LoadShader(ShaderType type, const char* path)
     };
     content = Preprocess(content);
 
-    const char* shdSrc = content.c_str();
-
-    // setup vertex shader
-
     GLuint shaderType;
     if (type == VERTEXSHADER)
-    {
         shaderType = GL_VERTEX_SHADER;
-    }
     else if (type == FRAGMENTSHADER)
-    {
         shaderType = GL_FRAGMENT_SHADER;
-    }
     else if (type == GEOMETRYSHADER)
-    {
         shaderType = GL_GEOMETRY_SHADER;
-    }
     else if (type == COMPUTESHADER)
-    {
         shaderType = GL_COMPUTE_SHADER;
-    }
 
     GLuint shader = glCreateShader(shaderType);
     GLint length = (GLint)content.length();
+    const char* shdSrc = content.c_str();
     glShaderSource(shader, 1, &shdSrc, &length);
     glCompileShader(shader);
 
     // get error log
     GLint shaderLogSize;
     glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &shaderLogSize);
-    if (shaderLogSize > 0)
+    if (shaderLogSize > 1)
     {
         char* buf = new char[shaderLogSize];
         glGetShaderInfoLog(shader, shaderLogSize, NULL, buf);
         printf("\n[SHADER COMPILE ERROR]: %s", buf);
         delete[] buf;
-
-#ifdef _DEBUGs
-         assert(false);
-#endif
      }
 
     Instance()->shaderSources.push_back(path);
@@ -107,7 +99,11 @@ ShaderResourceId ShaderResource::LoadShader(ShaderType type, const char* path)
     return ShaderResourceId(Instance()->shaders.size() - 1);
 }
 
-ShaderProgramId ShaderResource::CompileShaderProgram(std::vector<ShaderResourceId> const& shaders)
+//------------------------------------------------------------------------------
+/**
+*/
+ShaderProgramId
+ShaderResource::CompileShaderProgram(std::vector<ShaderResourceId> const& shaders)
 {
     printf("Creating shader program... ");
     GLuint program = glCreateProgram();
@@ -119,7 +115,7 @@ ShaderProgramId ShaderResource::CompileShaderProgram(std::vector<ShaderResourceI
     glLinkProgram(program);
     GLint shaderLogSize;
     glGetProgramiv(program, GL_INFO_LOG_LENGTH, &shaderLogSize);
-    if (shaderLogSize > 0)
+    if (shaderLogSize > 1)
     {
         GLchar* buf = new GLchar[shaderLogSize];
         glGetProgramInfoLog(program, shaderLogSize, NULL, buf);
@@ -133,12 +129,20 @@ ShaderProgramId ShaderResource::CompileShaderProgram(std::vector<ShaderResourceI
     return ShaderProgramId(Instance()->programs.size() - 1);
 }
 
-GLuint ShaderResource::GetProgramHandle(ShaderProgramId programId)
+//------------------------------------------------------------------------------
+/**
+*/
+GLuint
+ShaderResource::GetProgramHandle(ShaderProgramId programId)
 {
     return Instance()->programs[programId];
 }
 
-void ShaderResource::ReloadShaders()
+//------------------------------------------------------------------------------
+/**
+*/
+void
+ShaderResource::ReloadShaders()
 {
     printf("--- RELOAD SHADERS ---\n");
     // intentional copies
