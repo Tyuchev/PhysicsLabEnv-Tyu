@@ -29,15 +29,10 @@ function(flat_compile)
                 VERBATIM
 			)
         list(APPEND files ${output})
-		message(STATUS "#-----")	
-		message(STATUS abs_output_folder=${abs_output_folder})
-		message(STATUS output=${output})
-		
 		
 		endforeach()
 	set(files_proto ${files} PARENT_SCOPE)
 	source_group("generated" FILES ${files})
 	source_group("protocol" FILES ${fbs})
-	message(STATUS fbs=${fbs})
 
 endfunction()
