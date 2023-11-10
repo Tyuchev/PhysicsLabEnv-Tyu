@@ -10,3 +10,7 @@ Pull requests are welcome!
 
 * CMake
 * Compiler (tested on MSVC, GCC)
+
+## Adaptation
+
+The engine is being used in S0013E for students to gain experience bny implementing a Physics engine from scratch

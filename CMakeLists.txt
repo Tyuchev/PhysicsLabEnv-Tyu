@@ -1,7 +1,7 @@
 #--------------------------------------------------------------------------
-# spaceengine
+# PhysicsSandbox
 #--------------------------------------------------------------------------
-PROJECT(spaceengine)
+PROJECT(PhysicsSandbox)
 CMAKE_MINIMUM_REQUIRED(VERSION 3.2)
 
 MACRO(TARGET_PCH target path)
