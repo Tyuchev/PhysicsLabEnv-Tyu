@@ -1,6 +1,7 @@
 // Ray Intersection Assignment
 
 #include "RayIntersection.hpp"
+#include "comet/CometSimplePoly.hpp"
 
 
 // User input examples

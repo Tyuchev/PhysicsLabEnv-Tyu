@@ -16,7 +16,6 @@
 #include "core/random.h"
 #include "render/input/inputserver.h"
 #include "core/cvar.h"
-#include "render/physics.h"
 #include <chrono>
 
 #include "SandboxApp.hpp"
@@ -53,6 +52,7 @@ bool SandboxApp::Open()
             });
 
         return true;
+
     }
     return false;
 }
@@ -83,9 +83,8 @@ void SandboxApp::Run()
         glClear(GL_COLOR_BUFFER_BIT);
         this->m_Window->Update();
 
+        // Execute Raytracing here
 
-        // Execute the entire rendering pipeline
-        //Render::RenderDevice::Render(this->m_Window, dt);
 
         // transfer new frame to m_Window
         this->m_Window->SwapBuffers();
