@@ -19,7 +19,8 @@
 #include <chrono>
 
 #include "SandboxApp.hpp"
-
+#include "RayIntersection.hpp"
+#include "manta/Raytracer.hpp"
 
 
 SandboxApp::SandboxApp()
@@ -79,12 +80,14 @@ void SandboxApp::Run()
     while (this->m_Window->IsOpen())
     {
         auto timeStart = std::chrono::steady_clock::now();
-        
+
         glClear(GL_COLOR_BUFFER_BIT);
         this->m_Window->Update();
 
-        // Execute Raytracing here
+        // Create decision tree? Execute correct assignment.
+        RayIntersectionAssignment();
 
+        Render::RenderDevice::Render(this->m_Window, dt);
 
         // transfer new frame to m_Window
         this->m_Window->SwapBuffers();
@@ -95,6 +98,7 @@ void SandboxApp::Run()
         if (UserKeyboard->pressed[Input::Key::Code::Escape])
             this->Exit();
     }
+
 }
 
 

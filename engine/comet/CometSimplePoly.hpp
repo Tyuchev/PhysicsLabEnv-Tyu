@@ -23,17 +23,42 @@ class Plane
 public:
 
 	Plane() = delete;
-	Plane(float32 x, float32 y, float32 z, float32 constant);
+	Plane(glm::vec3 point, glm::vec3 normal, glm::vec3 colour);
 	~Plane();
 
 	glm::vec3 GetPoint();
-	glm::vec3 FindNormal();
+	glm::vec3 GetNormal();
+	glm::vec3 GetColour();
 
 private:
 
-	float32 m_XCoefficent, m_YCoefficient, m_ZCoefficient, m_Constant;
+	glm::vec3 m_Point;
+	glm::vec3 m_Normal;
+	glm::vec3 m_Colour;
+
+};
+
+
+class Ray
+{
+public:
+
+	Ray() = delete;
+	Ray(glm::vec3 start, glm::vec3 direction);
+	~Ray();
+
+	glm::vec3 Intersect(Plane plane, bool &isCollision);
+
+private:
+
+	glm::vec3 m_Start;
+	glm::vec3 m_Direction;
 
 
 };
+
+
+
+
 
 }

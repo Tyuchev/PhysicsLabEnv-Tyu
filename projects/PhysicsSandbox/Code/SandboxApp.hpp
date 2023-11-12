@@ -5,6 +5,7 @@
 #include "render/window.h"
 
 #include "SandboxApp.hpp"
+#include "manta/Raytracer.hpp"
 
 
 class SandboxApp : public Core::App
