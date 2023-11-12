@@ -6,6 +6,7 @@
 
 #include "SandboxApp.hpp"
 #include "manta/Raytracer.hpp"
+#include "manta/MantaSimplePoly.hpp"
 
 
 class SandboxApp : public Core::App

@@ -407,4 +407,22 @@ Window::GetMousePos(float64& x, float64& y)
 	glfwGetCursorPos(this->window, &x, &y);
 }
 
+void
+Window::Blit(float const* data, int w, int h)
+{
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_FLOAT, (void*)data);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//glBlitNamedFramebuffer(frameCopy, NULL, 0, 0, w, h, 0, 0, this->width, this->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, frameCopy);
+	glBlitFramebuffer(0, 0, w, h, 0, 0, this->width, this->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	// switch back to default read buffer
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+}
+
+
 } // namespace Display

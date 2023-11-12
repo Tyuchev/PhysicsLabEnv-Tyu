@@ -9,6 +9,10 @@
 #include <functional>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <imgui.h>
+#include "imgui_impl_opengl3.h"
+#include "imgui_impl_glfw.h"
+#include <string>
 #include <string>
 
 namespace Display
@@ -62,6 +66,8 @@ public:
 	/// get pos of mouse
 	void GetMousePos(float64& x, float64& y);
 
+	void Blit(float const* data, int w, int h);
+
 private:
 
 	/// static key press callback
@@ -108,6 +114,8 @@ private:
 	int32 height;
 	std::string title;
 	GLFWwindow* window;
+	GLuint texture;
+	GLuint frameCopy;
 };
 
 //------------------------------------------------------------------------------
@@ -223,5 +231,9 @@ Window::SetUiRender(const std::function<void()>& func)
 {
 	this->uiFunc = func;
 }
+
+/// bit block transfer from buffer to screen. data buffer must be exactly w * h * 3 large!
+
+
 
 } // namespace Display

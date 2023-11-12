@@ -23,7 +23,7 @@ class Plane
 public:
 
 	Plane() = delete;
-	Plane(glm::vec3 point, glm::vec3 normal, glm::vec3 colour);
+	Plane(glm::vec3 point, glm::vec3 normal);
 	~Plane();
 
 	glm::vec3 GetPoint();
@@ -34,7 +34,6 @@ private:
 
 	glm::vec3 m_Point;
 	glm::vec3 m_Normal;
-	glm::vec3 m_Colour;
 
 };
 
@@ -46,6 +45,9 @@ public:
 	Ray() = delete;
 	Ray(glm::vec3 start, glm::vec3 direction);
 	~Ray();
+
+	glm::vec3 GetStart();
+	glm::vec3 GetDirection();
 
 	glm::vec3 Intersect(Plane plane, bool &isCollision);
 

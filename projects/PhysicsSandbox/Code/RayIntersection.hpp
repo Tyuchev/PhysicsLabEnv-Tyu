@@ -21,6 +21,7 @@
 
 #include "comet/CometSimplePoly.hpp"
 #include "manta/Raytracer.hpp"
+#include "manta/MantaSimplePoly.hpp"
 
 
 void RayIntersectionAssignment();

@@ -1,27 +1,34 @@
 #pragma once
-//------------------------------------------------------------------------------
-/**
-    @file random.h
 
-    Contains random-number helper functions
-
-    @copyright
-    (C) 2018-2022 Individual contributors, see AUTHORS file
-*/
-//------------------------------------------------------------------------------
-
-namespace Core
+class RandomGen
 {
+public:
 
-/// Produces an xorshift128 pseudo random number.
-uint FastRandom();
 
-/// Produces an xorshift128 psuedo based floating point random number in range 0..1
-/// Note that this is not a truely random random number generator
-float RandomFloat();
+	/// Produces an xorshift128 pseudo random number.
+	unsigned FastRandom();
 
-/// Produces an xorshift128 psuedo based floating point random number in range -1..1
-/// Note that this is not a truely random random number generator
-float RandomFloatNTP();
+	/// Produces an xorshift128 psuedo based floating point random number in range 0..1
+	/// Note that this is not a truly random random number generator
+	float RandomFloat();
 
-} // namespace Core
+	/// Produces an xorshift128 psuedo based floating point random number in range -1..1
+	/// Note that this is not a truly random random number generator
+	float RandomFloatNTP();
+
+
+	RandomGen()
+		:x(123456789), y(362436069), z(521288629), w(88675123), t(1)
+	{
+		// empty
+	}
+
+private:
+
+
+	unsigned x;
+	unsigned y;
+	unsigned z;
+	unsigned w;
+	unsigned t;
+};

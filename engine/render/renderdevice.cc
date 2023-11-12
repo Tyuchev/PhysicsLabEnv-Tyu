@@ -426,6 +426,8 @@ RenderDevice::ParticlePass(float dt)
     
     uint32_t readIndex = (particles->writeIndex + 1) % 2;
 
+    RandomGen randomGen;
+
     for (auto emitter : particles->emitters)
     {
         // Integrate particle dynamics
@@ -441,7 +443,7 @@ RenderDevice::ParticlePass(float dt)
         glBindBufferBase(GL_UNIFORM_BUFFER, 10, particles->emitterBlockUBO);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(ParticleEmitter::EmitterBlock), &emitter->data, GL_STATIC_DRAW);
 
-        glUniform3ui(glGetUniformLocation(simProgramHandle, "Random"), Core::FastRandom(), Core::FastRandom(), Core::FastRandom());
+        glUniform3ui(glGetUniformLocation(simProgramHandle, "Random"), randomGen.FastRandom(), randomGen.FastRandom(), randomGen.FastRandom());
 
         const int numWorkGroups[3] = {
             emitter->data.numParticles / 1024,

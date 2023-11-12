@@ -19,8 +19,8 @@ namespace Comet
 
 // Plane ----------------------------------------------------
 // 
-Plane::Plane(glm::vec3 point, glm::vec3 normal, glm::vec3 colour)
-	: m_Point(point), m_Normal(normal), m_Colour(colour)
+Plane::Plane(glm::vec3 point, glm::vec3 normal)
+	: m_Point(point), m_Normal(normal)
 {
 }
 
@@ -41,10 +41,6 @@ glm::vec3 Plane::GetNormal()
 	return m_Normal;
 }
 
-glm::vec3 Plane::GetColour()
-{
-	return m_Colour;
-}
 
 // Ray ----------------------------------------------------
 // 
@@ -58,6 +54,16 @@ Ray::Ray(glm::vec3 start, glm::vec3 direction)
 Ray::~Ray() 
 {
 	// empty
+}
+
+glm::vec3 Ray::GetStart()
+{
+	return m_Start;
+}
+
+glm::vec3 Ray::GetDirection()
+{
+	return m_Direction;
 }
 
 glm::vec3 Ray::Intersect(Plane plane, bool& isCollision)

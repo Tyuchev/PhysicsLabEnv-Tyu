@@ -21,6 +21,7 @@
 #include "SandboxApp.hpp"
 #include "RayIntersection.hpp"
 #include "manta/Raytracer.hpp"
+#include "manta/MantaSimplePoly.hpp"
 
 
 SandboxApp::SandboxApp()
@@ -60,6 +61,8 @@ bool SandboxApp::Open()
 
 void SandboxApp::Run()
 {
+    std::chrono::high_resolution_clock wallClock{};
+
     int w;
     int h;
 
@@ -69,12 +72,38 @@ void SandboxApp::Run()
     Render::Camera* MainCam = Render::CameraManager::GetCamera(CAMERA_MAIN);
     MainCam->projection = projection;
 
+    // number of accumulated frames
+    int frameIndex = 0;
+
+    std::vector<glm::vec3> framebuffer;
+    framebuffer.resize(w * h);
+
+    std::vector<glm::vec3> framebufferCopy;
+    framebufferCopy.resize(w * h);
+
     // User Input
     Input::Keyboard* UserKeyboard = Input::GetDefaultKeyboard();
     Input::Mouse* UserMouse = Input::GetDefaultMouse();
 
+    int RPP = 1;
+    int BOUNCES = 5;
+
+    Manta::MantaRaytracer MantaRay{w, h, framebuffer, RPP, BOUNCES};
+    MantaRay.SetupRaytracer();
+
+    // Num of Rays per frame
+    float numberMegaRays = framebuffer.size() * (5 * 0.000001f);
+    float megaRaysPerSec = 0.0f;
+
+
+    // Create time points for render loop
+    std::chrono::high_resolution_clock::time_point renderBegin;
+    std::chrono::high_resolution_clock::time_point renderEnd;
+    double renderTimer{ 0.0 };
+
     // Min time step
     double dt = 0.01667f;
+
 
     // Simulation loop
     while (this->m_Window->IsOpen())
@@ -84,16 +113,46 @@ void SandboxApp::Run()
         glClear(GL_COLOR_BUFFER_BIT);
         this->m_Window->Update();
 
+        renderBegin = wallClock.now();
         // Create decision tree? Execute correct assignment.
         RayIntersectionAssignment();
 
-        Render::RenderDevice::Render(this->m_Window, dt);
+        frameIndex++;
+
+        // Get the average distribution of all samples
+        // CHANGE FRAMEBUFFERS - FROM FLOATS TO SOMETHING SMALLER???
+        // Currently floats - 4 bytes - 32 bits.. What do we need?
+        // Maybe use int8 = 8bits = up to the num 256? A quarter of float 32's size?? Do we need the precision of floats?
+        // otherwise maybe int16 = up to the num 65536
+        {
+            size_t p = 0;
+            for (glm::vec3 const& pixel : framebuffer)
+            {
+                framebufferCopy[p] = pixel;
+                framebufferCopy[p].r /= frameIndex;
+                framebufferCopy[p].g /= frameIndex;
+                framebufferCopy[p].b /= frameIndex;
+                p++;
+            }
+        } // with float 32's this buffer seems to be AT LEAST 4mb - Well over cache 1 & likely ovedr cache 2!!
+
+        m_Window->Blit((float*)&framebufferCopy[0], w, h);
 
         // transfer new frame to m_Window
         this->m_Window->SwapBuffers();
 
+        // Timers & Debug info
+        renderEnd = wallClock.now();
+        renderTimer = (std::chrono::duration_cast<std::chrono::microseconds>(renderEnd - renderBegin)).count() * 0.000001;
+
         auto timeEnd = std::chrono::steady_clock::now();
         dt = std::min(0.04, std::chrono::duration<double>(timeEnd - timeStart).count());
+
+        // MraysPerSec
+        megaRaysPerSec = numberMegaRays * (1.0f / renderTimer);
+
+        std::cout << "Render Time: " << renderTimer << " seconds" << std::endl;
+        std::cout << "Mrays/sec: " << megaRaysPerSec << "\n" << std::endl;
 
         if (UserKeyboard->pressed[Input::Key::Code::Escape])
             this->Exit();
